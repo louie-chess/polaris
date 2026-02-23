@@ -3,8 +3,10 @@ import chess.engine
 import hashtable
 import utils
 import sqlite3
+from dotenv import load_dotenv
+import os
 
-BOARDS_SIZE = 10007
+load_dotenv()
 
 def insert_evaluation(board: chess.Board, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection) -> int:
     binary = utils.binary(board)
@@ -30,10 +32,10 @@ def insert_pgn(pgn, boards: hashtable.HashTable, engine: chess.engine.SimpleEngi
             print(f"finished board {len(boards)}/{boards.size} with score {score}.")
 
 def main():
-    pgn = open("games.pgn")
-    boards = hashtable.HashTable(BOARDS_SIZE)
-    engine = chess.engine.SimpleEngine.popen_uci("/usr/local/bin/stockfish")
-    conn = sqlite3.connect("test.db")
+    pgn = open(os.getenv("GAMES_PATH"))
+    boards = hashtable.HashTable(int(os.getenv("BOARDS_SIZE")))
+    engine = chess.engine.SimpleEngine.popen_uci(os.getenv("STOCKFISH_PATH"))
+    conn = sqlite3.connect("evaluations.db")
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS evaluations (
