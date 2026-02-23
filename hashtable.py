@@ -36,9 +36,7 @@ class EvaluationsHashTable:
                 self.hash ^= zobrist.hashes[zobrist.CASTLING_HASHES + castling_right]
 
     def hash_ep_square(self, board: chess.Board):
-        if board.ep_square is None:
-            return np.uint64(0)
-
+        if board.ep_square is None: return
         self.hash ^= np.uint64(zobrist.hashes[zobrist.EP_HASHES + board.ep_square])
 
     def reset_hash(self):
