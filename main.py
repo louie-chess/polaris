@@ -12,7 +12,8 @@ load_dotenv()
 
 def insert_evaluation(board: chess.Board, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection) -> int:
     binary = utils.binary(board)
-    info = engine.analyse(board, chess.engine.Limit(depth=10))
+    depth = os.getenv("ENGINE_DEPTH", 12)
+    info = engine.analyse(board, chess.engine.Limit(depth))
     score = info["score"].relative.score(mate_score=100000)
     boards[board] = (binary, score)
     zobrist = boards.hash.tobytes()
@@ -42,12 +43,12 @@ def insert_pgn(pgn, boards: hashtable.EvaluationsHashTable, engine: chess.engine
         insert_evaluations(game, boards, engine, conn, None if pbar is None else fn)
 
 def main():
-    games_path, stockfish_path = os.getenv("GAMES_PATH"), os.getenv("STOCKFISH_PATH")
-    if games_path is None or stockfish_path is None:
+    games_path, engine_path = os.getenv("GAMES_PATH"), os.getenv("ENGINE_PATH")
+    if games_path is None or engine_path is None:
         raise KeyError("could not find environment variables")
 
     pgn = open(games_path)
-    engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
     conn = sqlite3.connect("evaluations.db")
     cur = conn.cursor()
     boards = hashtable.EvaluationsHashTable(int(os.getenv("BOARDS_SIZE", 10007)), cur)
