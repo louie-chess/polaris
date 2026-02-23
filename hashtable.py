@@ -2,17 +2,19 @@ import zobrist
 import chess
 import numpy as np
 import sqlite3
-from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
 
 DEFAULT_SIZE = 10007
+CORES = cpu_count()
 
 class EvaluationsHashTable:
-    def __init__(self, size=DEFAULT_SIZE, cur: sqlite3.Cursor=None):
+    def __init__(self, size=DEFAULT_SIZE, cur: sqlite3.Cursor=None, sql_table="evaluations"):
         self.hash = np.uint64(0)
         self.table = [None] * size
         self.size = np.uint32(size)
         self.length = np.uint32()
         if cur is not None:
+            self.sql_table = sql_table
             self.load_db(cur)
 
     def hash_pieces(self, board: chess.Board):
@@ -49,16 +51,19 @@ class EvaluationsHashTable:
         self.hash_castling_rights(board)
         self.hash_ep_square(board)
 
+    def insert_row_db(self, evaluation):
+        zobrist, binary, score, engine, depth = evaluation
+        zobrist = np.frombuffer(zobrist, dtype=np.uint64)[0]
+        index = zobrist % self.size
+        self.table[index] = { binary, score, engine, depth }
+
     def load_db(self, cur: sqlite3.Cursor):
-        cur.execute("SELECT zobrist, binary, score FROM evaluations")
+        cur.execute(f"SELECT zobrist, binary, score, engine, depth FROM {self.sql_table}")
         evaluations = cur.fetchall()
         self.length = len(evaluations)
 
-        for zobrist, binary, score in tqdm(evaluations, "Loading database"):
-            zobrist = np.frombuffer(zobrist, dtype=np.uint64)[0]
-            index = zobrist % self.size
-
-            self.table[index] = (binary, score)
+        with Pool(processes=CORES) as pool:
+            pool.map(self.insert_row_db, evaluations)
 
     def __setitem__(self, board, node):
         self.hash_board(board)

@@ -3,68 +3,70 @@ import chess.engine
 import hashtable
 import utils
 import sqlite3
-from dotenv import load_dotenv
-import os
+from dotenv import dotenv_values
 import typing
 from tqdm import tqdm
 
-load_dotenv()
+config = {
+    **dotenv_values(".env"),
+}
 
-def insert_evaluation(board: chess.Board, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection) -> int:
+def insert_evaluation(board: chess.Board, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection, depth: int) -> int:
     binary = utils.binary(board)
-    depth = os.getenv("ENGINE_DEPTH", 12)
-    info = engine.analyse(board, chess.engine.Limit(depth))
+    info = engine.analyse(board, chess.engine.Limit(depth=depth))
     score = info["score"].relative.score(mate_score=100000)
-    boards[board] = (binary, score)
+    boards[board] = { "binary": binary, "score": score, "engine": engine.id["name"], "depth": depth }
     zobrist = boards.hash.tobytes()
 
     conn.execute(
-        "INSERT INTO evaluations (zobrist, binary, score) VALUES (?, ?, ?)",
-        (zobrist, binary, score))
+        "INSERT INTO evaluations (zobrist, binary, score, engine, depth) VALUES (?, ?, ?, ?, ?)",
+        (zobrist, binary, score, engine.id["name"], depth))
     conn.commit()
 
-    return binary, score
+    return zobrist, binary, score, engine.id["name"], depth
 
-def insert_evaluations(game: chess.pgn.Game, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection, fn: typing.Callable[[bytes, int], typing.Any]=None):
+def insert_evaluations(game: chess.pgn.Game, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection, depth: int, fn: typing.Callable[[bytes, bytes, int, str, int], typing.Any]=None):
     board = game.board()
+
     for move in game.mainline_moves():
         board.push(move)
-        if boards[board] is not None: continue
+        board_entry = boards[board]
+        if board_entry is not None and board_entry["depth"] >= depth: continue
 
-        binary, score = insert_evaluation(board, boards, engine, conn)
-        if fn is not None: fn(binary, score)
+        zobrist, binary, score, engine_name, depth = insert_evaluation(board, boards, engine, conn, depth)
+        if fn is not None: fn(zobrist, binary, score, engine_name, depth)
 
-def insert_pgn(pgn, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection, pbar: tqdm=None):
+def insert_pgn(pgn, boards: hashtable.EvaluationsHashTable, engine: chess.engine.SimpleEngine, conn: sqlite3.Connection, depth: int, pbar: tqdm=None):
+    fn = lambda a,b,c,d,e: pbar.update()
+
     while len(boards) < boards.size:
         game = chess.pgn.read_game(pgn)
         if game is None: continue
 
-        fn = lambda x,y: pbar.update()
-        insert_evaluations(game, boards, engine, conn, None if pbar is None else fn)
+        insert_evaluations(game, boards, engine, conn, depth, None if pbar is None else fn)
 
 def main():
-    games_path, engine_path = os.getenv("GAMES_PATH"), os.getenv("ENGINE_PATH")
-    if games_path is None or engine_path is None:
-        raise KeyError("could not find environment variables")
-
-    pgn = open(games_path)
-    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
+    pgn = open(config["GAMES_PATH"])
+    engine = chess.engine.SimpleEngine.popen_uci(config["ENGINE_PATH"])
     conn = sqlite3.connect("evaluations.db")
     cur = conn.cursor()
-    boards = hashtable.EvaluationsHashTable(int(os.getenv("BOARDS_SIZE", 10007)), cur)
-    pbar = tqdm(total=boards.size-len(boards), desc="Loading games")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS evaluations (
             zobrist BLOB PRIMARY KEY,
             binary BLOB NOT NULL,
-            score INT NOT NULL
+            score INT NOT NULL,
+            engine TEXT,
+            depth INT
         )
     """)
 
     conn.commit()
 
-    insert_pgn(pgn, boards, engine, conn, pbar)
+    boards = hashtable.EvaluationsHashTable(int(config["NUM_BOARDS"]), cur)
+    pbar = tqdm(total=boards.size-len(boards))
+    insert_pgn(pgn, boards, engine, conn, int(config["ENGINE_DEPTH"]), pbar)
+    pgn.close()
     conn.close()
     engine.quit()
 
