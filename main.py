@@ -63,7 +63,7 @@ def main():
 
     conn.commit()
 
-    boards = hashtable.EvaluationsHashTable(int(config["NUM_BOARDS"]), cur)
+    boards = hashtable.EvaluationsHashTable(int(config["DB_SIZE"]), cur)
     pbar = tqdm(total=boards.size-len(boards))
     insert_pgn(pgn, boards, engine, conn, int(config["ENGINE_DEPTH"]), pbar)
     pgn.close()
