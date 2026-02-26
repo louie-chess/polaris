@@ -30,16 +30,16 @@ class EvaluationsHashTable:
 
     def hash_turn(self, board: chess.Board):
         turn = 1 if board.turn == chess.WHITE else 0
-        self.hash ^= np.uint64(zobrist.hashes[zobrist.TURN_HASHES + turn])
+        self.hash ^= zobrist.hashes[zobrist.TURN_HASHES + turn]
 
     def hash_castling_rights(self, board: chess.Board):
         for castling_right in range(len(zobrist.CASTLING_RIGHTS)):
-            if board.castling_rights & castling_right > 0:
-                self.hash ^= zobrist.hashes[zobrist.CASTLING_HASHES + castling_right]
+            if board.castling_rights & zobrist.CASTLING_RIGHTS[castling_right] == 0: continue
+            self.hash ^= zobrist.hashes[zobrist.CASTLING_HASHES + castling_right]
 
     def hash_ep_square(self, board: chess.Board):
         if board.ep_square is None: return
-        self.hash ^= np.uint64(zobrist.hashes[zobrist.EP_HASHES + board.ep_square])
+        self.hash ^= zobrist.hashes[zobrist.EP_HASHES + board.ep_square]
 
     def reset_hash(self):
         self.hash = np.uint64(0)
